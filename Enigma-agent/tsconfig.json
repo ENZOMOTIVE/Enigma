@@ -1,0 +1,9 @@
+{
+  "extends": "C:/codespace/decentralized-chat-app-master/AIxCrypto/Enigma/Enigma-agent/tsconfig.base.json",
+  "compilerOptions": {
+    "preserveSymlinks": true,
+    "outDir": "./dist",
+    "rootDir": "."
+  },
+  "include": ["*.ts"]
+}
