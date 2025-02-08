@@ -29,7 +29,7 @@ function validateEnvironment(): void {
   const missingVars: string[] = [];
 
   // Check required variables
-  const requiredVars = ["OPENAI_API_KEY", "CDP_API_KEY_NAME", "CDP_API_KEY_PRIVATE_KEY"];
+  const requiredVars = ["GAIA_API_KEY", "CDP_API_KEY_NAME", "CDP_API_KEY_PRIVATE_KEY"];
   requiredVars.forEach(varName => {
     if (!process.env[varName]) {
       missingVars.push(varName);
@@ -65,8 +65,15 @@ const WALLET_DATA_FILE = "wallet_data.txt";
 async function initializeAgent() {
   try {
     // Initialize LLM
+
+
     const llm = new ChatOpenAI({
-      model: "gpt-4o-mini",
+      apiKey: "gaia",
+      model: "llam70b",
+      configuration:{
+        baseURL: "https://llama70b.gaia.domains/v1",
+      },
+      
     });
 
     let walletDataStr: string | null = null;
