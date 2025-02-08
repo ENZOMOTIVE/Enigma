@@ -25,54 +25,46 @@ interface WalletData {
   lastUpdated: string;
 }
 
+interface BlockRange {
+  fromBlock: number;
+  toBlock: number;
+}
+
 class ContractMonitor {
   private provider: ethers.JsonRpcProvider;
   private contractAddress: string;
   private transactionCache: Map<string, WalletData>;
-  private readonly dataFile = "transaction_data.json";
 
   constructor(contractAddress: string, rpcUrl: string) {
     this.contractAddress = contractAddress;
     this.provider = new ethers.JsonRpcProvider(rpcUrl);
     this.transactionCache = new Map();
-    this.loadTransactionData();
   }
 
-  private loadTransactionData(): void {
-    try {
-      if (fs.existsSync(this.dataFile)) {
-        const data = JSON.parse(fs.readFileSync(this.dataFile, 'utf8'));
-        this.transactionCache = new Map(Object.entries(data));
+  private async waitForNetwork(retries: number = 3): Promise<void> {
+    for (let i = 0; i < retries; i++) {
+      try {
+        await this.provider.getNetwork();
+        console.log("Successfully connected to network");
+        return;
+      } catch (error) {
+        if (i === retries - 1) throw error;
+        console.log(`Waiting for network, attempt ${i + 1}/${retries}...`);
+        await new Promise(resolve => setTimeout(resolve, 2000));
       }
-    } catch (error) {
-      console.error("Error loading transaction data:", error);
     }
   }
 
-  private saveTransactionData(): void {
+  private async processBlockRange(range: BlockRange, retryCount: number = 0): Promise<void> {
     try {
-      const data = Object.fromEntries(this.transactionCache);
-      fs.writeFileSync(this.dataFile, JSON.stringify(data, null, 2));
-    } catch (error) {
-      console.error("Error saving transaction data:", error);
-    }
-  }
-
-  async updateTransactionCounts(): Promise<void> {
-    try {
-      // Get the latest block number
-      const latestBlock = await this.provider.getBlockNumber();
-      const fromBlock = latestBlock - 1000; // Look back 1000 blocks
-
-      // Get all transactions to/from the contract
       const filter = {
         address: this.contractAddress,
-        fromBlock,
-        toBlock: latestBlock,
+        fromBlock: range.fromBlock,
+        toBlock: range.toBlock,
       };
 
       const events = await this.provider.getLogs(filter);
-
+      
       for (const event of events) {
         const tx = await this.provider.getTransaction(event.transactionHash);
         if (tx && tx.from) {
@@ -80,9 +72,52 @@ class ContractMonitor {
         }
       }
 
-      this.saveTransactionData();
+      return;
     } catch (error) {
-      console.error("Error updating transaction counts:", error);
+      if (retryCount >= 2) {
+        throw error;
+      }
+      console.log(`Retrying blocks ${range.fromBlock}-${range.toBlock}, attempt ${retryCount + 1}/3`);
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      return this.processBlockRange(range, retryCount + 1);
+    }
+  }
+
+  async getLastHourTransactions(): Promise<void> {
+    try {
+      await this.waitForNetwork();
+
+      const latestBlock = await this.provider.getBlockNumber();
+      const blocksPerHour = 120; // Approximate blocks per hour for Arbitrum
+      const fromBlock = latestBlock - blocksPerHour;
+
+      console.log(`Fetching transactions from block ${fromBlock} to ${latestBlock}`);
+
+      // Split the range into smaller chunks
+      const chunkSize = 20;
+      const ranges: BlockRange[] = [];
+      
+      for (let i = fromBlock; i < latestBlock; i += chunkSize) {
+        ranges.push({
+          fromBlock: i,
+          toBlock: Math.min(i + chunkSize - 1, latestBlock)
+        });
+      }
+
+      // Process each range
+      for (const range of ranges) {
+        try {
+          await this.processBlockRange(range);
+        } catch (error) {
+          console.error(`Failed to process blocks ${range.fromBlock}-${range.toBlock} after 3 attempts:`, error);
+        }
+      }
+
+      this.displayTopWallets();
+
+    } catch (error) {
+      console.error("Error fetching last hour transactions:", error);
+      throw error;
     }
   }
 
@@ -106,10 +141,10 @@ class ContractMonitor {
 
   displayTopWallets(): void {
     const topWallets = this.getTopWallets();
-    console.log("\nTop 5 Wallets by Transaction Count:");
-    console.log("==================================");
+    console.log("\nTop 5 Wallets by Transaction Count (Last Hour):");
+    console.log("=============================================");
     if (topWallets.length === 0) {
-      console.log("No transactions recorded yet.");
+      console.log("No transactions found in the last hour.");
     } else {
       topWallets.forEach((wallet, index) => {
         console.log(`${index + 1}. Address: ${wallet.address}`);
@@ -123,63 +158,15 @@ class ContractMonitor {
 
 async function initializeAgent() {
   try {
-    const llm = new ChatOpenAI({
-      apiKey: "gaia",
-      model: "llam70b",
-      configuration: {
-        baseURL: "https://llama70b.gaia.domains/v1",
-      },
-    });
-
-    const config = {
-      apiKeyName: process.env.CDP_API_KEY_NAME,
-      apiKeyPrivateKey: process.env.CDP_API_KEY_PRIVATE_KEY?.replace(/\\n/g, "\n"),
-      networkId: "arbitrum-sepolia",
-    };
-
-    const walletProvider = await CdpWalletProvider.configureWithWallet(config);
+    console.log("Initializing contract monitor...");
     const monitor = new ContractMonitor(
       process.env.CONTRACT_ADDRESS!,
       process.env.RPC_URL!
     );
-
-    const agentkit = await AgentKit.from({
-      walletProvider,
-      actionProviders: [
-        wethActionProvider(),
-        pythActionProvider(),
-        walletActionProvider(),
-        erc20ActionProvider(),
-        cdpApiActionProvider({
-          apiKeyName: process.env.CDP_API_KEY_NAME,
-          apiKeyPrivateKey: process.env.CDP_API_KEY_PRIVATE_KEY?.replace(/\\n/g, "\n"),
-        }),
-        cdpWalletActionProvider({
-          apiKeyName: process.env.CDP_API_KEY_NAME,
-          apiKeyPrivateKey: process.env.CDP_API_KEY_PRIVATE_KEY?.replace(/\\n/g, "\n"),
-        }),
-      ],
-    });
-
-    return { monitor, agentkit };
+    return { monitor };
   } catch (error) {
     console.error("Failed to initialize agent:", error);
     throw error;
-  }
-}
-
-async function runMonitoring(monitor: ContractMonitor, interval = 30) {
-  console.log("Starting contract monitoring...");
-  
-  while (true) {
-    try {
-      await monitor.updateTransactionCounts();
-      monitor.displayTopWallets();
-      await new Promise(resolve => setTimeout(resolve, interval * 1000));
-    } catch (error) {
-      console.error("Error in monitoring loop:", error);
-      await new Promise(resolve => setTimeout(resolve, interval * 1000));
-    }
   }
 }
 
@@ -190,9 +177,13 @@ async function main() {
   }
 
   try {
-    console.log("Initializing contract monitor...");
     const { monitor } = await initializeAgent();
-    await runMonitoring(monitor);
+    
+    console.log("Fetching last hour's transaction data...");
+    await monitor.getLastHourTransactions();
+    
+    // Exit after displaying the data
+    process.exit(0);
   } catch (error) {
     console.error("Fatal error:", error);
     process.exit(1);
@@ -200,7 +191,7 @@ async function main() {
 }
 
 if (require.main === module) {
-  console.log("Starting Transaction Monitor...");
+  console.log("Starting Transaction Monitor for Last Hour...");
   main().catch(error => {
     console.error("Fatal error:", error);
     process.exit(1);
