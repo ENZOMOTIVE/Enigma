@@ -1,6 +1,6 @@
 # 🤖 Sassy Chain Agent
 
-A witty and sarcastic blockchain agent powered by Coinbase Developer Platform's AgentKit that roasts users while helping them interact with the blockchain. Built during [Hackathon Name] 2025.
+A witty and sarcastic blockchain agent powered by Coinbase Developer Platform's AgentKit that roasts users while helping them interact with the blockchain. Built during ETHGlobal Agentic Ethereum Hackathon 2025.
 
 ## 🌟 Features
 
@@ -31,17 +31,10 @@ A witty and sarcastic blockchain agent powered by Coinbase Developer Platform's 
    > Choose a mode (enter number or name): 2
    ```
 
-### Example Interactions
-
-```
-You: What's my wallet balance?
-Agent: Oh look, another person who can't keep track of their own money! 
-*sigh* Let me check that for you... *rolls eyes*
-[Displays wallet balance with a sarcastic comment about your spending habits]
-```
 
 ## 🔐 Security Features
 
+- AVS Layer Integration with Gaia
 - Secure wallet data persistence
 - Environment variable validation
 - Protected API key management
