@@ -6,7 +6,7 @@
   "license": "Apache-2.0",
   "scripts": {
     "start": "set NODE_OPTIONS=--no-warnings && ts-node ./chatbot.ts",
-    "dev": "nodemon ./chatbot.ts",
+    "dev": "ts-node ./chatbot.ts",
     "lint": "eslint -c .eslintrc.json *.ts",
     "lint-fix": "eslint -c .eslintrc.json *.ts --fix",
     "format": "prettier -c .prettierrc --write \"**/*.{ts,js,cjs,json,md}\"",
